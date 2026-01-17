@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+.venv_*/
+venv/
+env/
+
+.vscode/
+
+# Env files
+.env
+
+# Ollama cache (optional)
+.ollama/
