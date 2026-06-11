@@ -1,6 +1,5 @@
 from orchestrator.workflow import run_workflow
 
-result = run_workflow("Research Python GIL and summarize in 5 points")
+result = run_workflow("Calculate 25 * 10")
 
-print("PLANNER OUTPUT:")
 print(result)
