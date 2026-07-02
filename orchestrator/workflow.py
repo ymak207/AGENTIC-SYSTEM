@@ -1,42 +1,240 @@
+import time
+
 from agents.planner import PlannerAgent
 from agents.executor import ExecutorAgent
 from agents.reviewer import ReviewerAgent
+
 from orchestrator.state import WorkflowState
+from orchestrator.workflow_status import WorkflowStatus
+
+from knowledge.knowledge_manager import KnowledgeManager
 
 
-def run_workflow(user_input: str) -> str:
+def run_workflow(user_input: str) -> WorkflowState:
+
+    workflow_start = time.time()
+
     planner = PlannerAgent()
     executor = ExecutorAgent()
     reviewer = ReviewerAgent()
+    knowledge = KnowledgeManager()
+
     state = WorkflowState()
 
-    plan = planner.plan(user_input)
+    # ==========================================
+    # Live Workflow Status
+    # ==========================================
+
+    status = WorkflowStatus()
+
+    state.workflow_status = status.to_list()
+
+    state.add_trace(
+        "Workflow Started"
+    )
+
+    # ==========================================
+    # MEMORY + KNOWLEDGE
+    # ==========================================
+
+    status.start("memory")
+    state.workflow_status = status.to_list()
+
+    status.start("knowledge")
+    state.workflow_status = status.to_list()
+
+    knowledge.retrieve(
+        user_input,
+        state
+    )
+
+    status.complete("memory")
+    status.complete("knowledge")
+
+    state.workflow_status = status.to_list()
+
+    # ==========================================
+    # PLANNER
+    # ==========================================
+
+    status.start("planner")
+    state.workflow_status = status.to_list()
+
+    planner_start = time.time()
+
+    plan = planner.plan(
+        user_input,
+        state
+    )
+
+    planner_end = time.time()
+
+    state.metrics["planner_seconds"] = round(
+        planner_end - planner_start,
+        2
+    )
+
+    status.complete("planner")
+    state.workflow_status = status.to_list()
+
+    # ==========================================
+    # EXECUTION LOOP
+    # ==========================================
 
     while state.retry_count <= state.max_retries:
 
-        print(f"\n--- Attempt {state.retry_count + 1} ---")
+        attempt_number = state.retry_count + 1
 
-        # reset state for fresh execution
-        state.research_notes = []
-        state.key_points = []
+        print(f"\n--- Attempt {attempt_number} ---")
+
+        state.add_trace(
+            f"Attempt {attempt_number} Started"
+        )
+
         state.final_answer = None
 
-        # run execution
-        executor.execute(plan, state, user_input)
+        # ======================================
+        # EXECUTOR
+        # ======================================
+
+        status.start("executor")
+        state.workflow_status = status.to_list()
+
+        executor_start = time.time()
+
+        executor.execute(
+            plan,
+            state,
+            user_input
+        )
+
+        executor_end = time.time()
+
+        state.metrics["executor_seconds"] += round(
+            executor_end - executor_start,
+            2
+        )
+
+        status.complete("executor")
+        state.workflow_status = status.to_list()
 
         if not state.final_answer:
-            return "No final answer produced."
 
-        review = reviewer.review(user_input, state.final_answer)
+            state.add_trace(
+                "Workflow Failed: No Final Answer"
+            )
+
+            workflow_end = time.time()
+
+            state.metrics["workflow_seconds"] = round(
+                workflow_end - workflow_start,
+                2
+            )
+
+            return state
+
+        # ======================================
+        # REVIEWER
+        # ======================================
+
+        status.start("reviewer")
+        state.workflow_status = status.to_list()
+
+        reviewer_start = time.time()
+
+        review = reviewer.review(
+            user_input,
+            state.final_answer,
+            state
+        )
+
+        reviewer_end = time.time()
+
+        state.metrics["reviewer_seconds"] += round(
+            reviewer_end - reviewer_start,
+            2
+        )
+
+        status.complete("reviewer")
+        state.workflow_status = status.to_list()
+
+        # ======================================
+        # APPROVED
+        # ======================================
 
         if review["approved"]:
-            print("✅ Approved by reviewer")
-            return state.final_answer
 
-        # ❌ Not approved → retry
-        print("❌ Rejected:", review["feedback"])
+            saved_count = knowledge.save_memory(
+                user_input
+            )
+
+            state.metrics[
+                "memories_saved"
+            ] += saved_count
+
+            state.add_trace(
+                f"Memory Saved ({saved_count})"
+            )
+
+            state.add_trace(
+                "Workflow Approved"
+            )
+
+            status.finish()
+
+            state.workflow_status = status.to_list()
+
+            state.add_trace(
+                "Workflow Completed"
+            )
+
+            workflow_end = time.time()
+
+            state.metrics["workflow_seconds"] = round(
+                workflow_end - workflow_start,
+                2
+            )
+
+            print(
+                "✅ Approved by reviewer"
+            )
+
+            return state
+
+        # ======================================
+        # REJECTED
+        # ======================================
+
+        state.add_trace(
+            f"Workflow Rejected: {review['feedback']}"
+        )
+
+        print(
+            "❌ Rejected:",
+            review["feedback"]
+        )
 
         state.feedback = review["feedback"]
+
         state.retry_count += 1
 
-    return "Failed after retries."
+        state.add_trace(
+            f"Retry Count = {state.retry_count}"
+        )
+
+    # ==========================================
+    # FAILED
+    # ==========================================
+
+    state.add_trace(
+        "Workflow Failed After Retries"
+    )
+
+    workflow_end = time.time()
+
+    state.metrics["workflow_seconds"] = round(
+        workflow_end - workflow_start,
+        2
+    )
+
+    return state

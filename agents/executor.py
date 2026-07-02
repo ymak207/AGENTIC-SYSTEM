@@ -17,10 +17,23 @@ class ExecutorAgent:
     def execute(self, plan: dict, state, user_goal: str):
 
         # =====================================
+        # OBSERVABILITY
+        # =====================================
+
+        state.add_trace(
+            "Executor Started"
+        )
+
+        # =====================================
         # STEP 1: ROUTE REQUEST
         # =====================================
 
         tool_decision = self.router.route(user_goal)
+
+        state.add_trace(
+            f"Tool Routing Complete "
+            f"(use_tool={tool_decision.get('use_tool')})"
+        )
 
         # =====================================
         # STEP 2: EXECUTE TOOL
@@ -28,12 +41,33 @@ class ExecutorAgent:
 
         if tool_decision.get("use_tool"):
 
+            tool_name = tool_decision["tool_name"]
+
+            state.add_trace(
+                f"Tool Selected: {tool_name}"
+            )
+
             execution_result = self.tool_executor.execute(
-                tool_name=tool_decision["tool_name"],
+                tool_name=tool_name,
                 tool_input=tool_decision["tool_input"]
             )
 
+            # =====================================
+            # TOOL HISTORY
+            # =====================================
+
+            state.tool_calls.append(
+                {
+                    "tool_name": tool_name,
+                    "success": execution_result["success"]
+                }
+            )
+
             if execution_result["success"]:
+
+                state.add_trace(
+                    f"Tool Success: {tool_name}"
+                )
 
                 state.final_answer = (
                     f"Tool Used: "
@@ -41,13 +75,26 @@ class ExecutorAgent:
                     f"Result: "
                     f"{execution_result['result']}"
                 )
-                return  
-            
+
+                state.add_trace(
+                    "Executor Completed"
+                )
+
+                return
+
+            state.add_trace(
+                f"Tool Failed: {tool_name}"
+            )
+
             state.final_answer = (
                 f"Tool Used: "
                 f"{execution_result['tool_name']}\n"
                 f"Error: "
                 f"{execution_result['error']}"
+            )
+
+            state.add_trace(
+                "Executor Completed"
             )
 
             return
@@ -59,6 +106,10 @@ class ExecutorAgent:
         improvement_note = ""
 
         if state.feedback:
+
+            state.add_trace(
+                "Using Reviewer Feedback"
+            )
 
             improvement_note = f"""
 Previous answer failed review.
@@ -92,7 +143,6 @@ Reviewer feedback:
 - Output ONLY the final answer
 """
 
-        # sentence format
         if "sentence" in goal_lower:
 
             format_rules += """
@@ -102,7 +152,6 @@ Reviewer feedback:
 - Do NOT use bullet points
 """
 
-        # point format
         elif "point" in goal_lower or "bullet" in goal_lower:
 
             format_rules += """
@@ -119,23 +168,94 @@ Reviewer feedback:
         # STEP 6: FINAL LLM EXECUTION
         # =====================================
 
+        
+
+        memory_text = ""
+
+        if state.knowledge["memory"]:
+        
+            memory_text = (
+                "\nKnown User Memory:\n"
+                + "\n".join(
+                    state.knowledge["memory"]
+                )
+                + "\n"
+            )
+
+        rag_text = ""
+
+        if state.knowledge["rag"]:
+
+            rag_text = "\nRetrieved Knowledge:\n\n"
+        
+            for chunk in state.knowledge["rag"]:
+        
+                rag_text += (
+        
+                    f"Document: {chunk['document']}\n"
+        
+                    f"Chunk: {chunk['chunk']}\n"
+        
+                    f"{chunk['text']}\n"
+        
+                    "----------------------------------------\n"
+
+                )
+        
         prompt = f"""
-{improvement_note}
+                {improvement_note}
+                
+                You are an execution agent.
+                
+                Use the retrieved knowledge ONLY when it is relevant
+                to answering the user's request.
+                
+                {memory_text}
+                
+                {rag_text}
+                
+                User goal:
+                {user_goal}
+                
+                Plan:
+                {steps_text}
+                
+                Generate the FINAL ANSWER that EXACTLY matches
+                the requested format.
+                
+                STRICT FORMAT RULES:
+                
+                {format_rules}
+                """
 
-You are an execution agent.
+        state.metrics["llm_calls"] += 1
 
-User goal:
-{user_goal}
+        if state.knowledge["memory"]:
 
-Plan:
-{steps_text}
+            state.add_trace(
+                f"Memory Injected ({len(state.knowledge['memory'])})"
+            )
 
-Generate the FINAL ANSWER that EXACTLY matches the requested format.
+        if state.knowledge["rag"]:
 
-STRICT FORMAT RULES:
-{format_rules}
-"""
+            state.add_trace(
+        
+                f"RAG Injected ({len(state.knowledge['rag'])})"
+        
+            )
 
+        state.add_trace(
+            "LLM Execution Started"
+        )
+        
         state.final_answer = (
             self.llm.generate(prompt).strip()
+        )
+
+        state.add_trace(
+            "LLM Execution Completed"
+        )
+
+        state.add_trace(
+            "Executor Completed"
         )

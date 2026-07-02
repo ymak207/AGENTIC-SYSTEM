@@ -1,11 +1,32 @@
-from tools.tool_executor import ToolExecutor
+from agents.planner import PlannerAgent
+from agents.executor import ExecutorAgent
+from orchestrator.state import WorkflowState
 
-executor = ToolExecutor()
+planner = PlannerAgent()
+executor = ExecutorAgent()
 
-result = executor.execute(
-    "calculator",
-    "25 * 10"
+state = WorkflowState()
+
+goal = "What is 25 * 15?"
+
+plan = planner.plan(
+    goal,
+    state
 )
 
-print(result)
+executor.execute(
+    plan,
+    state,
+    goal
+)
 
+print("\nFINAL ANSWER\n")
+print(state.final_answer)
+
+print("\nTRACE\n")
+
+for item in state.trace:
+    print(item)
+
+print("\nTOOL CALLS\n")
+print(state.tool_calls)
