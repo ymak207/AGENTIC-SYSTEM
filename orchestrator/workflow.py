@@ -34,30 +34,11 @@ def run_workflow(user_input: str) -> WorkflowState:
     )
 
     # ==========================================
-    # MEMORY + KNOWLEDGE
-    # ==========================================
-
-    status.start("memory")
-    state.workflow_status = status.to_list()
-
-    status.start("knowledge")
-    state.workflow_status = status.to_list()
-
-    knowledge.retrieve(
-        user_input,
-        state
-    )
-
-    status.complete("memory")
-    status.complete("knowledge")
-
-    state.workflow_status = status.to_list()
-
-    # ==========================================
     # PLANNER
     # ==========================================
 
     status.start("planner")
+
     state.workflow_status = status.to_list()
 
     planner_start = time.time()
@@ -75,6 +56,27 @@ def run_workflow(user_input: str) -> WorkflowState:
     )
 
     status.complete("planner")
+
+    state.workflow_status = status.to_list()
+
+    # ==========================================
+    # KNOWLEDGE RETRIEVAL
+    # ==========================================
+
+    status.start("memory")
+    status.start("knowledge")
+
+    state.workflow_status = status.to_list()
+
+    knowledge.retrieve(
+        user_input,
+        plan,
+        state
+    )
+
+    status.complete("memory")
+    status.complete("knowledge")
+
     state.workflow_status = status.to_list()
 
     # ==========================================
@@ -85,7 +87,9 @@ def run_workflow(user_input: str) -> WorkflowState:
 
         attempt_number = state.retry_count + 1
 
-        print(f"\n--- Attempt {attempt_number} ---")
+        print(
+            f"\n--- Attempt {attempt_number} ---"
+        )
 
         state.add_trace(
             f"Attempt {attempt_number} Started"
@@ -98,6 +102,7 @@ def run_workflow(user_input: str) -> WorkflowState:
         # ======================================
 
         status.start("executor")
+
         state.workflow_status = status.to_list()
 
         executor_start = time.time()
@@ -116,7 +121,12 @@ def run_workflow(user_input: str) -> WorkflowState:
         )
 
         status.complete("executor")
+
         state.workflow_status = status.to_list()
+
+        # ======================================
+        # EXECUTOR FAILED
+        # ======================================
 
         if not state.final_answer:
 
@@ -138,6 +148,7 @@ def run_workflow(user_input: str) -> WorkflowState:
         # ======================================
 
         status.start("reviewer")
+
         state.workflow_status = status.to_list()
 
         reviewer_start = time.time()
@@ -156,6 +167,7 @@ def run_workflow(user_input: str) -> WorkflowState:
         )
 
         status.complete("reviewer")
+
         state.workflow_status = status.to_list()
 
         # ======================================
@@ -223,7 +235,7 @@ def run_workflow(user_input: str) -> WorkflowState:
         )
 
     # ==========================================
-    # FAILED
+    # FAILED AFTER RETRIES
     # ==========================================
 
     state.add_trace(

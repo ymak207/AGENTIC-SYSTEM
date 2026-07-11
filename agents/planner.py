@@ -4,254 +4,479 @@ from llm.ollama_llm import OllamaLLM
 
 
 PLANNER_PROMPT = """
-You are a planning agent.
+You are an Enterprise AI Planning Agent.
 
-Rules:
-- Output ONLY valid JSON
-- No explanations
-- Create minimal steps needed to solve the task
+Return ONLY valid JSON.
 
-Every step MUST contain:
-- id
-- action
-- description
+Your responsibilities are:
 
-Format:
+1. Decide which knowledge sources are required.
+2. Decide which tools are required.
+3. Produce the minimum execution steps.
+4. Never retrieve unnecessary information.
+5. NEVER execute calculations.
+6. NEVER answer the user's question.
+7. ONLY create a plan.
+
+------------------------------------------------
+
+AVAILABLE KNOWLEDGE SOURCES
+
+memory
+- User profile
+- Previous conversations
+- Personal facts
+- Stored preferences
+
+rag
+- Uploaded PDFs
+- Company documentation
+- Policies
+- Manuals
+- Knowledge Base
+
+web
+- Latest information
+- News
+- Current events
+- Live internet information
+
+------------------------------------------------
+
+AVAILABLE TOOLS
+
+calculator
+
+------------------------------------------------
+
+KNOWLEDGE SELECTION RULES
+
+User profile
+→ memory
+
+Uploaded documents
+→ rag
+
+Company policies
+→ rag
+
+Manuals
+→ rag
+
+Latest information
+→ web
+
+Today's information
+→ web
+
+Current information
+→ web
+
+Recent news
+→ web
+
+Mathematics or calculations
+→ calculator
+AND use an empty knowledge_sources list.
+
+Company documents + latest information
+→ rag + web
+
+User profile + company documents
+→ memory + rag
+
+User profile + latest information
+→ memory + web
+
+------------------------------------------------
+
+IMPORTANT RULES
+
+If uploaded documents can answer the question,
+DO NOT use web.
+
+Use web ONLY when the user explicitly requests:
+- latest
+- current
+- today
+- recent
+- news
+- live
+- internet
+
+Never mix company documents with web unless
+the user explicitly asks to compare or combine.
+
+Allowed knowledge_sources are ONLY
+
+memory
+rag
+web
+
+Allowed tools are ONLY
+
+calculator
+
+Do NOT invent new knowledge sources.
+
+Do NOT invent new tools.
+
+Do NOT calculate answers.
+
+The executor performs calculations.
+
+------------------------------------------------
+
+Return EXACTLY
+
 {
-  "goal": "<user goal>",
-  "steps": [
-    {
-      "id": 1,
-      "action": "<action>",
-      "description": "<what to do>"
-    }
-  ]
+    "goal":"...",
+
+    "knowledge_sources":[
+        "memory"
+    ],
+
+    "tools":[
+        "calculator"
+    ],
+
+    "steps":[
+        {
+            "id":1,
+            "action":"...",
+            "description":"..."
+        }
+    ]
 }
 """
 
 
 class PlannerAgent:
 
+    ALLOWED_KNOWLEDGE = {
+
+        "memory",
+
+        "rag",
+
+        "web"
+
+    }
+
+    ALLOWED_TOOLS = {
+
+        "calculator"
+
+    }
+
     def __init__(self):
 
         self.llm = OllamaLLM()
 
-    # =====================================
-    # PLAN VALIDATION
-    # =====================================
+    # -------------------------------------------------
 
-    def _validate_plan(self, plan: dict):
+    def _validate_plan(
+        self,
+        plan
+    ):
 
-        if "goal" not in plan:
+        required = [
 
-            raise ValueError("Planner missing goal")
+            "goal",
 
-        if "steps" not in plan:
+            "knowledge_sources",
 
-            raise ValueError("Planner missing steps")
+            "tools",
 
-        if not isinstance(plan["steps"], list):
+            "steps"
 
-            raise ValueError("Planner steps must be a list")
+        ]
+
+        for field in required:
+
+            if field not in plan:
+
+                raise ValueError(
+
+                    f"Planner missing '{field}'"
+
+                )
+
+        if not isinstance(
+            plan["knowledge_sources"],
+            list
+        ):
+
+            raise ValueError(
+                "knowledge_sources must be a list"
+            )
+
+        if not isinstance(
+            plan["tools"],
+            list
+        ):
+
+            raise ValueError(
+                "tools must be a list"
+            )
+
+        if not isinstance(
+            plan["steps"],
+            list
+        ):
+
+            raise ValueError(
+                "steps must be a list"
+            )
 
         if len(plan["steps"]) == 0:
 
-            raise ValueError("Planner steps cannot be empty")
+            raise ValueError(
+                "Planner produced zero steps."
+            )
 
-        required_fields = [
-            "id",
-            "action",
-            "description"
-        ]
+        # -----------------------------
+        # Validate Knowledge Sources
+        # -----------------------------
 
-        for index, step in enumerate(plan["steps"], start=1):
+        for source in plan["knowledge_sources"]:
 
-            for field in required_fields:
+            if source not in self.ALLOWED_KNOWLEDGE:
+
+                raise ValueError(
+
+                    f"Invalid knowledge source '{source}'"
+
+                )
+
+        # -----------------------------
+        # Validate Tools
+        # -----------------------------
+
+        for tool in plan["tools"]:
+
+            if tool not in self.ALLOWED_TOOLS:
+
+                raise ValueError(
+
+                    f"Invalid tool '{tool}'"
+
+                )
+
+        # -----------------------------
+        # Validate Steps
+        # -----------------------------
+
+        for step in plan["steps"]:
+
+            for field in [
+
+                "id",
+
+                "action",
+
+                "description"
+
+            ]:
 
                 if field not in step:
 
                     raise ValueError(
-                        f"Step {index} missing field: {field}"
+
+                        f"Step missing '{field}'"
+
                     )
 
-    # =====================================
-    # PLAN REPAIR
-    # =====================================
+    # -------------------------------------------------
 
     def _repair_plan(
+
         self,
-        user_goal: str,
-        broken_response: str,
+
+        user_goal,
+
+        broken_response,
+
         state=None
-    ) -> dict:
-    
+
+    ):
+
         repair_prompt = f"""
-    The planner produced an invalid plan.
-    
-    User Goal:
-    {user_goal}
-    
-    Broken Output:
-    {broken_response}
-    
-    Fix the plan.
-    
-    Return ONLY valid JSON.
-    
-    Every step MUST contain:
-    - id
-    - action
-    - description
-    """
-    
+The previous JSON is INVALID because of formatting.
+
+Your job is ONLY to repair the JSON.
+
+DO NOT
+
+- change the goal
+- change the meaning
+- invent knowledge sources
+- invent tools
+- invent new steps
+
+Allowed knowledge_sources
+
+memory
+rag
+web
+
+Allowed tools
+
+calculator
+
+User Goal
+
+{user_goal}
+
+Broken JSON
+
+{broken_response}
+
+Return ONLY corrected JSON.
+"""
+
         if state:
-    
+
             state.metrics["llm_calls"] += 1
-    
-        repaired_response = (
-            self.llm.generate(repair_prompt)
-            .strip()
-        )
-    
-        return json.loads(repaired_response)
 
-    # =====================================
-    # PLAN GENERATION
-    # =====================================
+        repaired = self.llm.generate(
 
-    # =====================================
-    # OBSERVABILITY CHANGE #1
-    # Added state parameter
-    # =====================================
+            repair_prompt
+
+        ).strip()
+
+        return json.loads(repaired)
+
+    # -------------------------------------------------
 
     def plan(
+
         self,
-        user_goal: str,
+
+        user_goal,
+
         state=None
-    ) -> dict:
 
-        # =====================================
-        # OBSERVABILITY CHANGE #2
-        # Planner start event
-        # =====================================
+    ):
 
         if state:
 
             state.add_trace(
+
                 "Planner Started"
+
             )
 
-        memory_text = ""
+        memory_context = ""
 
-        if state and state.knowledge["memory"]:
+        if (
 
-            memory_text = (
-                "\nKnown User Memory:\n"
+            state
+
+            and
+
+            state.knowledge["memory"]
+
+        ):
+
+            memory_context = (
+
+                "\nKnown User Memory\n"
+
                 + "\n".join(
-                    state.knowledge["memory"]
-                )
-                + "\n"
-            )
-        
-        prompt = (
-            f"{PLANNER_PROMPT}\n"
-            f"{memory_text}\n"
-            f"User goal: {user_goal}"
-        )
 
+                    state.knowledge["memory"]
+
+                )
+
+            )
+
+        prompt = f"""
+
+{PLANNER_PROMPT}
+
+{memory_context}
+
+User Goal
+
+{user_goal}
+
+"""
 
         if state:
 
-          state.metrics["llm_calls"] += 1
+            state.metrics["llm_calls"] += 1
 
-        response = (self.llm.generate(prompt).strip())
+        response = self.llm.generate(
 
-        # =====================================
-        # OBSERVABILITY CHANGE #3
-        # LLM response received
-        # =====================================
+            prompt
+
+        ).strip()
 
         if state:
 
             state.add_trace(
+
                 "Planner Response Received"
+
             )
 
         try:
 
-            plan = json.loads(response)
+            plan = json.loads(
 
-            # =====================================
-            # OBSERVABILITY CHANGE #4
-            # JSON parsed successfully
-            # =====================================
+                response
 
-            if state:
+            )
 
-                state.add_trace(
-                    "Planner JSON Parsed"
-                )
+            self._validate_plan(
 
-            self._validate_plan(plan)
+                plan
 
-            # =====================================
-            # OBSERVABILITY CHANGE #5
-            # Validation successful
-            # =====================================
+            )
+
+        except Exception as ex:
 
             if state:
 
                 state.add_trace(
-                    f"Plan Validated ({len(plan['steps'])} steps)"
+
+                    f"Planner Repair Started ({str(ex)})"
+
                 )
 
-                state.plan = plan
+            plan = self._repair_plan(
 
-                state.add_trace(
-                    "Planner Completed"
-                )
+                user_goal,
 
-            return plan
+                response,
 
-        except Exception as e:
+                state
 
-            # =====================================
-            # OBSERVABILITY CHANGE #6
-            # Validation failure
-            # =====================================
+            )
+
+            self._validate_plan(
+
+                plan
+
+            )
 
             if state:
 
                 state.add_trace(
-                    f"Validation Failed: {str(e)}"
+
+                    "Planner Repair Completed"
+
                 )
 
-                state.add_trace(
-                    "Repair Started"
-                )
+        if state:
 
-            repaired_plan = self._repair_plan(
-              user_goal=user_goal,
-              broken_response=response,
-              state=state)
+            state.plan = plan
 
-            self._validate_plan(repaired_plan)
+            state.add_trace(
 
-            # =====================================
-            # OBSERVABILITY CHANGE #7
-            # Repair success
-            # =====================================
+                "Planner Completed"
 
-            if state:
+            )
 
-                state.add_trace(
-                    "Repair Successful"
-                )
-
-                state.plan = repaired_plan
-
-                state.add_trace(
-                    "Planner Completed"
-                )
-
-            return repaired_plan
+        return plan

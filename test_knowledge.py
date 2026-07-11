@@ -1,35 +1,84 @@
-from services.knowledge_service import (
-    KnowledgeService
-)
+from agents.planner import PlannerAgent
 
-service = KnowledgeService()
+from orchestrator.state import WorkflowState
 
-documents = service.list_documents()
+from knowledge.knowledge_manager import KnowledgeManager
 
-print()
 
-print("=" * 80)
-print("DOCUMENTS")
-print("=" * 80)
+planner = PlannerAgent()
 
-for doc in documents:
+knowledge = KnowledgeManager()
+
+state = WorkflowState()
+
+
+queries = [
+
+    "What is my profession?",
+
+    "Explain AWS Well Architected Framework.",
+
+    "Latest AWS announcements",
+
+    "125 * 84"
+
+]
+
+
+for query in queries:
 
     print()
 
-    print("Name      :", doc["name"])
-    print("Size (MB) :", doc["size_mb"])
-    print("Chunks    :", doc["chunks"])
-    print("Modified  :", doc["modified"])
-    print("Status    :", doc["status"])
+    print("=" * 80)
 
-print()
+    print(query)
 
-print("=" * 80)
-print("REBUILD")
-print("=" * 80)
+    print("=" * 80)
 
-print()
+    plan = planner.plan(
 
-print(
-    service.rebuild_index()
-)
+        query,
+
+        state
+
+    )
+
+    print()
+
+    print("Planner Selected")
+    
+    print("----------------")
+    
+    print("Knowledge :", plan["knowledge_sources"])
+    
+    print("Tools     :", plan["tools"])
+
+    knowledge.retrieve(
+
+        query,
+
+        plan,
+
+        state
+
+    )
+
+    print()
+
+    print("Memory Loaded :", len(state.knowledge["memory"]))
+
+    print("RAG Loaded    :", len(state.knowledge["rag"]))
+
+    print("Web Loaded    :", len(state.knowledge["web"]))
+
+    print()
+
+    state.knowledge = {
+
+        "memory": [],
+
+        "rag": [],
+
+        "web": []
+
+    }

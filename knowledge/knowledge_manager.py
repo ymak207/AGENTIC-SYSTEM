@@ -1,7 +1,13 @@
-from memory.memory_agent import MemoryAgent
+from knowledge.providers.memory_provider import (
+    MemoryProvider
+)
 
-from knowledge.rag_vector_store import (
-    RAGVectorStore
+from knowledge.providers.rag_provider import (
+    RAGProvider
+)
+
+from knowledge.providers.web_provider import (
+    WebProvider
 )
 
 
@@ -9,92 +15,104 @@ class KnowledgeManager:
 
     def __init__(self):
 
-        self.memory = MemoryAgent()
+        self.memory_provider = MemoryProvider()
 
-        self.rag = RAGVectorStore()
+        self.provider_registry = {
+
+            "memory": self.memory_provider,
+
+            "rag": RAGProvider(),
+
+            "web": WebProvider()
+
+        }
+
+    # -------------------------------------------------
 
     def retrieve(
+
         self,
-        query: str,
+
+        query,
+
+        plan,
+
         state
+
     ):
 
         state.add_trace(
+
             "Knowledge Retrieval Started"
+
         )
 
-        # --------------------------
-        # MEMORY
-        # --------------------------
+        sources = plan.get(
 
-        memory_context = (
-            self.memory.get_relevant_memory(
-                query
+            "knowledge_sources",
+
+            []
+
+        )
+
+        if len(sources) == 0:
+
+            state.add_trace(
+
+                "Planner requested no knowledge retrieval"
+
             )
-        )
 
-        state.knowledge["memory"] = (
-            memory_context
-        )
+        for source in sources:
 
-        state.metrics[
-            "memories_loaded"
-        ] = len(memory_context)
+            provider = self.provider_registry.get(
 
-        state.add_trace(
-            f"Memory Retrieved ({len(memory_context)})"
-        )
+                source
 
-        # --------------------------
-        # RAG
-        # --------------------------
-
-        rag_context = (
-            self.rag.search(
-                query,
-                top_k=5
             )
-        )
 
-        state.knowledge["rag"] = (
-            rag_context
-        )
+            if provider is None:
 
-        state.add_trace(
-            f"RAG Retrieved ({len(rag_context)})"
-        )
+                state.add_trace(
 
-        state.add_trace(
-            "Knowledge Retrieval Completed"
-        )
+                    f"Unknown Knowledge Provider ({source})"
 
-    def save_memory(
-        self,
-        user_input: str
-    ):
-
-        keywords = [
-
-            "my name is",
-
-            "i am",
-
-            "i work as",
-
-            "i am learning",
-
-            "i like"
-
-        ]
-
-        for keyword in keywords:
-
-            if keyword in user_input.lower():
-
-                self.memory.save_fact(
-                    user_input
                 )
 
-                return 1
+                continue
 
-        return 0
+            state.add_trace(
+
+                f"Executing {source.upper()} Provider"
+
+            )
+
+            provider.retrieve(
+
+                query,
+
+                state
+
+            )
+
+        state.add_trace(
+
+            "Knowledge Retrieval Completed"
+
+        )
+
+    # -------------------------------------------------
+
+    def save_memory(
+
+        self,
+
+        user_input
+
+    ):
+
+        return self.memory_provider.save_memory(
+
+            user_input
+
+        )
