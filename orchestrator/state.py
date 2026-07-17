@@ -48,6 +48,7 @@ class WorkflowState:
     "llm_calls": 0,
     "memories_loaded": 0,
     "memories_saved": 0,
+    "planner_repairs": 0
 }
     # ==================================================
     # OBSERVABILITY - NEW

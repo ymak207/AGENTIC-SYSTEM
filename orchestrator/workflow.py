@@ -3,6 +3,7 @@ import time
 from agents.planner import PlannerAgent
 from agents.executor import ExecutorAgent
 from agents.reviewer import ReviewerAgent
+from routing.intent_router import IntentRouter
 
 from orchestrator.state import WorkflowState
 from orchestrator.workflow_status import WorkflowStatus
@@ -15,6 +16,7 @@ def run_workflow(user_input: str) -> WorkflowState:
     workflow_start = time.time()
 
     planner = PlannerAgent()
+    intent_router = IntentRouter()
     executor = ExecutorAgent()
     reviewer = ReviewerAgent()
     knowledge = KnowledgeManager()
@@ -43,8 +45,17 @@ def run_workflow(user_input: str) -> WorkflowState:
 
     planner_start = time.time()
 
+    routing = intent_router.route(
+    user_input
+    )
+    
+    state.add_trace(
+        "Intent Routing Completed"
+    )
+    
     plan = planner.plan(
         user_input,
+        routing,
         state
     )
 

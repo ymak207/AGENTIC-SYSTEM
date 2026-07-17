@@ -47,15 +47,12 @@ class KnowledgeManager:
 
         )
 
-        sources = plan.get(
+        requested_sources = plan.get(
+    "knowledge_sources",
+    []
+)
 
-            "knowledge_sources",
-
-            []
-
-        )
-
-        if len(sources) == 0:
+        if len(requested_sources) == 0:
 
             state.add_trace(
 
@@ -63,7 +60,7 @@ class KnowledgeManager:
 
             )
 
-        for source in sources:
+        for source in requested_sources:
 
             provider = self.provider_registry.get(
 

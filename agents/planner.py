@@ -1,4 +1,5 @@
 import json
+import re
 
 from llm.ollama_llm import OllamaLLM
 
@@ -6,140 +7,202 @@ from llm.ollama_llm import OllamaLLM
 PLANNER_PROMPT = """
 You are an Enterprise AI Planning Agent.
 
-Return ONLY valid JSON.
+Your ONLY responsibility is to create an execution plan.
 
-Your responsibilities are:
+Routing has ALREADY been decided.
 
-1. Decide which knowledge sources are required.
-2. Decide which tools are required.
-3. Produce the minimum execution steps.
-4. Never retrieve unnecessary information.
-5. NEVER execute calculations.
-6. NEVER answer the user's question.
-7. ONLY create a plan.
+DO NOT
 
-------------------------------------------------
+- answer the user
+- choose knowledge sources
+- choose tools
+- modify routing
+- execute any step
+- calculate results
+- browse the web
+- retrieve memory
+- retrieve RAG
+- include URLs
+- include code
 
-AVAILABLE KNOWLEDGE SOURCES
+Return ONLY VALID JSON.
 
-memory
-- User profile
-- Previous conversations
-- Personal facts
-- Stored preferences
+Every object inside steps must contain exactly:
 
-rag
-- Uploaded PDFs
-- Company documentation
-- Policies
-- Manuals
-- Knowledge Base
+id
+action
+description
 
-web
-- Latest information
-- News
-- Current events
-- Live internet information
+The JSON MUST be directly parsable using Python json.loads().
 
-------------------------------------------------
+IMPORTANT
 
-AVAILABLE TOOLS
+Before returning your answer, mentally verify that every string is valid JSON.
 
-calculator
+FINAL SELF CHECK
 
-------------------------------------------------
+Before returning your response, pretend it will immediately be executed as:
 
-KNOWLEDGE SELECTION RULES
+json.loads(your_output)
 
-User profile
-→ memory
+If parsing would fail for any reason,
 
-Uploaded documents
-→ rag
+fix the JSON before returning it.
 
-Company policies
-→ rag
+Do not return JSON that would fail parsing.
 
-Manuals
-→ rag
+The output will be parsed directly using Python json.loads().
 
-Latest information
-→ web
+Quotation Rules
 
-Today's information
-→ web
+Avoid quotation marks inside string values whenever possible.
 
-Current information
-→ web
+Preferred
 
-Recent news
-→ web
+"description":"Search the Docker documentation."
 
-Mathematics or calculations
-→ calculator
-AND use an empty knowledge_sources list.
+Preferred
 
-Company documents + latest information
-→ rag + web
+"description":"Open the Announcements section."
 
-User profile + company documents
-→ memory + rag
+Instead of
 
-User profile + latest information
-→ memory + web
+"description":"Open the "Announcements" section."
 
-------------------------------------------------
+rewrite it as
 
-IMPORTANT RULES
+"description":"Open the Announcements section."
 
-If uploaded documents can answer the question,
-DO NOT use web.
+Only use quotation marks when absolutely necessary.
 
-Use web ONLY when the user explicitly requests:
-- latest
-- current
-- today
-- recent
-- news
-- live
-- internet
+If quotation marks are required,
+escape them using \".
 
-Never mix company documents with web unless
-the user explicitly asks to compare or combine.
+Never place unescaped double quotes inside JSON string values.
 
-Allowed knowledge_sources are ONLY
+Correct
 
-memory
-rag
-web
+{
+    "goal":"Determine user's profession"
+}
 
-Allowed tools are ONLY
+Correct
 
-calculator
+{
+    "goal":"Determine user\"s profession"
+}
 
-Do NOT invent new knowledge sources.
+Wrong
 
-Do NOT invent new tools.
+{
+    "goal":"Determine user"s profession"
+}
 
-Do NOT calculate answers.
+If any string contains a double quote ("),
+it MUST be escaped as \".
 
-The executor performs calculations.
+Never output invalid JSON.
 
-------------------------------------------------
+JSON Rules
 
-Return EXACTLY
+- Use ONLY double quotes.
+- NEVER use single quotes.
+- Escape any double quotes inside strings using \\"
+- Never wrap JSON inside markdown.
+- Never write explanations.
+- Never add text before or after JSON.
+- Never include comments.
+- Never include trailing commas.
+- Every string must be valid JSON.
+- If a sentence requires quotation marks inside a string,
+escape them using \".
+Example
+"description":"Type \"hello\" into the console."
+
+The planner creates ONLY execution steps.
+
+Do not mention implementation names like:
+
+- RAG
+- Memory
+- Web
+- Calculator
+
+Describe the task instead.
+
+Good
+
+Retrieve Docker information
+
+Bad
+
+Retrieve Docker from RAG
+
+Steps describe WHAT should happen.
+
+Every step MUST contain:
+
+- id
+- action
+- description
+
+description must never be empty.
+
+Never omit required fields.
+
+Steps NEVER contain:
+
+- results
+- answers
+- retrieved content
+- URLs
+- example outputs
+- calculated values
+
+Step Writing Rules
+
+- Describe the task, not the exact user input.
+- Do not include URLs.
+- Do not include quoted phrases unless properly escaped.
+- Keep action concise.
+- Keep description concise.
+- Prefer generic task descriptions over literal examples.
+
+The routing below is FINAL.
+
+Never create steps that require knowledge sources or tools that are NOT present in the provided routing.
+
+If knowledge_sources is empty,
+do not create retrieval steps.
+
+If tools is empty,
+do not create tool execution steps.
+
+Every step must be achievable using ONLY the provided routing.
+
+You MUST copy it exactly.
+
+Every step MUST contain ALL of the following fields.
+
+- id
+- action
+- description
+
+The description field is mandatory.
+
+Never omit it.
+
+Never leave it empty.
+
+If you cannot think of a better description,
+repeat the action as the description.
+
+Output format
 
 {
     "goal":"...",
-
-    "knowledge_sources":[
-        "memory"
-    ],
-
-    "tools":[
-        "calculator"
-    ],
-
+    "knowledge_sources":[],
+    "tools":[],
     "steps":[
         {
             "id":1,
@@ -149,7 +212,6 @@ Return EXACTLY
     ]
 }
 """
-
 
 class PlannerAgent:
 
@@ -174,6 +236,55 @@ class PlannerAgent:
         self.llm = OllamaLLM()
 
     # -------------------------------------------------
+
+    def _normalize_json(self, text: str) -> str:
+        """
+        Fix common LLM JSON mistakes before json.loads().
+        """
+    
+        
+    
+        # Python literals -> JSON literals
+        text = text.replace("True", "true")
+        text = text.replace("False", "false")
+        text = text.replace("None", "null")
+    
+        return text
+    
+    def _sanitize_json(self, text):
+
+        return self._normalize_json(text)
+
+    def _extract_json(self, text: str) -> str:
+        """
+        Extract JSON from LLM output.
+    
+        Handles:
+        - ```json ... ```
+        - Here is the corrected JSON...
+        - Extra explanations
+        """
+    
+        text = text.strip()
+    
+        # Look for fenced JSON first
+        match = re.search(
+            r"```(?:json)?\s*(.*?)```",
+            text,
+            flags=re.DOTALL | re.IGNORECASE
+        )
+    
+        if match:
+            return match.group(1).strip()
+    
+        # Otherwise find first JSON object
+        start = text.find("{")
+        end = text.rfind("}")
+    
+        if start == -1 or end == -1:
+            raise ValueError("No JSON found.")
+    
+        return text[start:end + 1]
 
     def _validate_plan(
         self,
@@ -234,6 +345,8 @@ class PlannerAgent:
             raise ValueError(
                 "Planner produced zero steps."
             )
+        
+        
 
         # -----------------------------
         # Validate Knowledge Sources
@@ -269,94 +382,178 @@ class PlannerAgent:
 
         for step in plan["steps"]:
 
-            for field in [
-
+            for field in (
                 "id",
-
                 "action",
-
                 "description"
-
-            ]:
-
+            ):
+        
                 if field not in step:
-
                     raise ValueError(
-
                         f"Step missing '{field}'"
-
                     )
+    
+            if not isinstance(step["id"], int):
+                raise ValueError("step id must be integer")
+        
+            if step["id"] <= 0:
+                raise ValueError("step id must be positive")
+        
+            if not isinstance(step["action"], str):
+                raise ValueError("action must be string")
+        
+            if not step["action"].strip():
+                raise ValueError("action cannot be empty")
+        
+            if not isinstance(step["description"], str):
+                raise ValueError("description must be string")
+        
+            
+    
+        # -------------------------------------------------
+    def _clean_plan(self, plan, routing):
 
-    # -------------------------------------------------
-
+        plan["knowledge_sources"] = routing["knowledge_sources"]
+        plan["tools"] = routing["tools"]
+    
+        allowed = {"id", "action", "description"}
+    
+        for step in plan["steps"]:
+    
+            # Ensure description always exists
+            step.setdefault(
+                "description",
+                step.get("action", "")
+            )
+    
+            if isinstance(step["description"], str):
+                step["description"] = step["description"].strip()
+    
+            if not step["description"]:
+                step["description"] = step.get(
+                    "action",
+                    ""
+                )
+    
+            # Remove unexpected fields
+            for key in list(step.keys()):
+                if key not in allowed:
+                    del step[key]
+    
+        return plan
+    
     def _repair_plan(
-
-        self,
-
-        user_goal,
-
-        broken_response,
-
-        state=None
-
-    ):
+    self,
+    user_goal,
+    broken_response,
+    state=None
+):
 
         repair_prompt = f"""
-The previous JSON is INVALID because of formatting.
+The Planner produced invalid output.
 
-Your job is ONLY to repair the JSON.
+Your task is to repair it.
 
-DO NOT
+DO NOT change the meaning.
 
-- change the goal
-- change the meaning
-- invent knowledge sources
-- invent tools
-- invent new steps
+DO NOT rewrite the plan.
 
-Allowed knowledge_sources
-
-memory
-rag
-web
-
-Allowed tools
-
-calculator
+ONLY repair what caused the parser failure.
 
 User Goal
 
 {user_goal}
 
-Broken JSON
+Broken Planner Output
 
 {broken_response}
 
-Return ONLY corrected JSON.
-"""
+Repair Rules
+
+Repair the planner output into valid JSON.
+
+Do NOT change the execution plan.
+
+Do NOT improve the plan.
+
+Do NOT rewrite actions.
+
+Do NOT rewrite descriptions.
+
+Do NOT infer missing information.
+
+Do NOT add new fields.
+
+Preserve the original schema exactly.
+
+Only repair structural problems.
+
+Examples
+
+- invalid JSON
+- escaping errors
+- missing commas
+- trailing commas
+- invalid brackets
+- incorrect field types
+
+Do not rewrite the execution plan.
+
+Do not improve wording.
+
+Do not invent new actions.
+
+Do not invent new descriptions.
+
+Do not add new steps.
+
+Preserve the original content whenever possible.
+
+Allowed top-level fields
+
+goal
+knowledge_sources
+tools
+steps
+
+Allowed step fields
+
+id
+action
+description
+
+Return ONLY valid JSON."""
 
         if state:
 
             state.metrics["llm_calls"] += 1
+        if state:
+            state.metrics["planner_repairs"] += 1
 
-        repaired = self.llm.generate(
+        repaired = self.llm.generate(repair_prompt).strip()
+        
+        json_text = self._extract_json(repaired)
 
-            repair_prompt
+        json_text = self._sanitize_json(json_text)
 
-        ).strip()
-
-        return json.loads(repaired)
+        print("\n===== Repair JSON =====")
+        print(json_text)
+        print("=======================\n")
+        
+        return json.loads(json_text)
 
     # -------------------------------------------------
 
     def plan(
 
         self,
-
+    
         user_goal,
-
+    
+        routing,
+    
         state=None
-
+    
     ):
 
         if state:
@@ -367,40 +564,26 @@ Return ONLY corrected JSON.
 
             )
 
-        memory_context = ""
-
-        if (
-
-            state
-
-            and
-
-            state.knowledge["memory"]
-
-        ):
-
-            memory_context = (
-
-                "\nKnown User Memory\n"
-
-                + "\n".join(
-
-                    state.knowledge["memory"]
-
-                )
-
-            )
+        
 
         prompt = f"""
-
 {PLANNER_PROMPT}
-
-{memory_context}
 
 User Goal
 
 {user_goal}
 
+Knowledge Sources
+
+{routing["knowledge_sources"]}
+
+Tools
+
+{routing["tools"]}
+
+Create ONLY execution steps.
+
+Return the SAME knowledge_sources and tools exactly as provided.
 """
 
         if state:
@@ -423,17 +606,19 @@ User Goal
 
         try:
 
-            plan = json.loads(
+            json_text = self._extract_json(response)
 
-                response
+            json_text = self._sanitize_json(json_text) 
 
-            )
+            print("\n===== Planner JSON =====")
+            print(json_text)
+            print("========================\n")
+                        
+            plan = json.loads(json_text)
 
-            self._validate_plan(
-
-                plan
-
-            )
+            plan = self._clean_plan(plan, routing)
+            
+            self._validate_plan(plan)
 
         except Exception as ex:
 
@@ -446,14 +631,12 @@ User Goal
                 )
 
             plan = self._repair_plan(
+                    user_goal,
+                    response,
+                    state
+                )
 
-                user_goal,
-
-                response,
-
-                state
-
-            )
+            plan = self._clean_plan(plan, routing)
 
             self._validate_plan(
 
