@@ -1,45 +1,57 @@
 from routing.intent_router import IntentRouter
 from agents.planner import PlannerAgent
-from orchestrator.state import WorkflowState
+
 
 router = IntentRouter()
+
 planner = PlannerAgent()
 
-queries = [
+
+tests = [
+
     "Explain Docker",
-    "Latest AWS announcements",
+
+    "23*44",
+
+    "Explain Docker and calculate 23*44",
+
     "What is my profession",
-    "125*84",
-    "What is 45 + 78?",
-    "Explain Docker and calculate 23*44"
+
+    "Latest AWS announcements"
+
 ]
 
-for query in queries:
 
-    print("\n" + "=" * 80)
-    print(query)
+for goal in tests:
+
+    print("=" * 80)
+    print(goal)
     print("=" * 80)
 
-    routing = router.route(query)
+    routing = router.route(goal)
 
     print("\nRouting")
     print(routing)
 
-    state = WorkflowState()
-
     plan = planner.plan(
-        query,
-        routing,
-        state
+        goal,
+        routing
     )
 
-   
-
-    print("\nPlanner Output")
+    print("\nPlanner")
     print(plan)
 
+    assert "capabilities" in routing
 
+    assert isinstance(
+        routing["capabilities"],
+        list
+    )
 
-    print("\nTrace")
-    for item in state.trace:
-        print(item)
+    assert "goal" in plan
+
+    assert "steps" in plan
+
+    assert len(plan["steps"]) > 0
+
+print("\nIntent -> Capability -> Planner test passed.")

@@ -197,43 +197,58 @@ Never leave it empty.
 If you cannot think of a better description,
 repeat the action as the description.
 
+The planner must preserve the supplied User Goal exactly.
+
+Never replace it.
+
+Never infer a different task.
+
+Never use examples from previous conversations.
+
+The returned goal must semantically match the supplied User Goal.
 Output format
 
 {
     "goal":"...",
-    "knowledge_sources":[],
-    "tools":[],
     "steps":[
         {
             "id":1,
+            "capability":"knowledge",
             "action":"...",
             "description":"..."
         }
     ]
 }
+
+Rules
+
+Each step MUST contain one capability.
+
+Allowed capabilities are provided at runtime.
+
+Use only capabilities from the supplied routing.
+
+Planner MUST NOT output tools.
+
+Planner MUST NOT output knowledge_sources.
+
+Planner assigns one capability to each step.
+
+Executor decides how that capability is executed.
 """
 
 class PlannerAgent:
 
-    ALLOWED_KNOWLEDGE = {
-
-        "memory",
-
-        "rag",
-
-        "web"
-
-    }
-
-    ALLOWED_TOOLS = {
-
-        "calculator"
-
-    }
+    
 
     def __init__(self):
 
         self.llm = OllamaLLM()
+
+        self.allowed_capabilities = [
+            "knowledge",
+            "compute"
+        ]
 
     # -------------------------------------------------
 
@@ -292,16 +307,15 @@ class PlannerAgent:
     ):
 
         required = [
-
-            "goal",
-
-            "knowledge_sources",
-
-            "tools",
-
-            "steps"
-
-        ]
+                "goal",
+                "steps"
+            ]
+        
+        if not isinstance(plan["goal"], str):
+            raise ValueError("goal must be string")
+        
+        if not plan["goal"].strip():
+            raise ValueError("goal cannot be empty")
 
         for field in required:
 
@@ -313,23 +327,7 @@ class PlannerAgent:
 
                 )
 
-        if not isinstance(
-            plan["knowledge_sources"],
-            list
-        ):
-
-            raise ValueError(
-                "knowledge_sources must be a list"
-            )
-
-        if not isinstance(
-            plan["tools"],
-            list
-        ):
-
-            raise ValueError(
-                "tools must be a list"
-            )
+        
 
         if not isinstance(
             plan["steps"],
@@ -346,35 +344,7 @@ class PlannerAgent:
                 "Planner produced zero steps."
             )
         
-        
-
-        # -----------------------------
-        # Validate Knowledge Sources
-        # -----------------------------
-
-        for source in plan["knowledge_sources"]:
-
-            if source not in self.ALLOWED_KNOWLEDGE:
-
-                raise ValueError(
-
-                    f"Invalid knowledge source '{source}'"
-
-                )
-
-        # -----------------------------
-        # Validate Tools
-        # -----------------------------
-
-        for tool in plan["tools"]:
-
-            if tool not in self.ALLOWED_TOOLS:
-
-                raise ValueError(
-
-                    f"Invalid tool '{tool}'"
-
-                )
+    
 
         # -----------------------------
         # Validate Steps
@@ -384,6 +354,7 @@ class PlannerAgent:
 
             for field in (
                 "id",
+                "capability",
                 "action",
                 "description"
             ):
@@ -392,6 +363,16 @@ class PlannerAgent:
                     raise ValueError(
                         f"Step missing '{field}'"
                     )
+                
+            allowed_capabilities = {
+                "knowledge",
+                "compute"
+            }.intersection(set(self.allowed_capabilities))
+            
+            if step["capability"] not in allowed_capabilities:
+                raise ValueError(
+                    f"Invalid capability {step['capability']}"
+                )
     
             if not isinstance(step["id"], int):
                 raise ValueError("step id must be integer")
@@ -410,38 +391,7 @@ class PlannerAgent:
         
             
     
-        # -------------------------------------------------
-    def _clean_plan(self, plan, routing):
 
-        plan["knowledge_sources"] = routing["knowledge_sources"]
-        plan["tools"] = routing["tools"]
-    
-        allowed = {"id", "action", "description"}
-    
-        for step in plan["steps"]:
-    
-            # Ensure description always exists
-            step.setdefault(
-                "description",
-                step.get("action", "")
-            )
-    
-            if isinstance(step["description"], str):
-                step["description"] = step["description"].strip()
-    
-            if not step["description"]:
-                step["description"] = step.get(
-                    "action",
-                    ""
-                )
-    
-            # Remove unexpected fields
-            for key in list(step.keys()):
-                if key not in allowed:
-                    del step[key]
-    
-        return plan
-    
     def _repair_plan(
     self,
     user_goal,
@@ -470,59 +420,33 @@ Broken Planner Output
 
 Repair Rules
 
-Repair the planner output into valid JSON.
+Repair the JSON only.
 
-Do NOT change the execution plan.
+Do not change the goal.
 
-Do NOT improve the plan.
+Do not change the execution intent.
 
-Do NOT rewrite actions.
+Do not add steps.
 
-Do NOT rewrite descriptions.
-
-Do NOT infer missing information.
-
-Do NOT add new fields.
-
-Preserve the original schema exactly.
-
-Only repair structural problems.
-
-Examples
-
-- invalid JSON
-- escaping errors
-- missing commas
-- trailing commas
-- invalid brackets
-- incorrect field types
-
-Do not rewrite the execution plan.
+Do not remove steps.
 
 Do not improve wording.
 
-Do not invent new actions.
+Only repair structural JSON issues.
 
-Do not invent new descriptions.
+Return ONLY valid JSON using the original schema.
 
-Do not add new steps.
-
-Preserve the original content whenever possible.
-
-Allowed top-level fields
+Required schema
 
 goal
-knowledge_sources
-tools
-steps
+steps[]
 
-Allowed step fields
+step
 
 id
+capability
 action
-description
-
-Return ONLY valid JSON."""
+description"""
 
         if state:
 
@@ -569,21 +493,13 @@ Return ONLY valid JSON."""
         prompt = f"""
 {PLANNER_PROMPT}
 
-User Goal
-
+User Goal:
 {user_goal}
 
-Knowledge Sources
+Available Capabilities:
+{json.dumps(routing["capabilities"])}
 
-{routing["knowledge_sources"]}
-
-Tools
-
-{routing["tools"]}
-
-Create ONLY execution steps.
-
-Return the SAME knowledge_sources and tools exactly as provided.
+Return ONLY valid JSON.
 """
 
         if state:
@@ -616,7 +532,7 @@ Return the SAME knowledge_sources and tools exactly as provided.
                         
             plan = json.loads(json_text)
 
-            plan = self._clean_plan(plan, routing)
+            
             
             self._validate_plan(plan)
 
@@ -636,7 +552,7 @@ Return the SAME knowledge_sources and tools exactly as provided.
                     state
                 )
 
-            plan = self._clean_plan(plan, routing)
+            
 
             self._validate_plan(
 

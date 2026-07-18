@@ -1,14 +1,6 @@
-from capabilities.capability_router import (
-    CapabilityRouter
-)
-
-from capabilities.knowledge.knowledge_router import (
-    KnowledgeRouter
-)
-
+from capabilities.capability_router import CapabilityRouter
+from capabilities.knowledge.knowledge_router import KnowledgeRouter
 from tools.router import ToolRouter
-
-import re
 
 
 class IntentRouter:
@@ -26,87 +18,24 @@ class IntentRouter:
         user_input
     ):
 
-        result = {
+        intent = {
 
-            "capabilities": [],
-
-            "knowledge_sources": [],
-
-            "tools": [],
-
-            "clarification_required": False,
-
-            "clarification_question": None
-        }
-
-        # -----------------------------------
-        # Tool Routing
-        # -----------------------------------
-
-        tool_result = self.tool_router.route(user_input)
-        
-        if tool_result.get("use_tool"):
-            result["tools"].append(
-                tool_result["tool_name"]
-            )
-
-        cleaned = tool_result.get(
-                "tool_input",
-                ""
-            )
-        
-        if (
-            tool_result.get("use_tool")
-            and re.fullmatch(r"[\d\s\+\-\*/().]+", cleaned)
-        ):
-            planner_input = {
-                "knowledge_sources": [],
-                "tools": result["tools"]
-            }
-        
-            result["capabilities"] = (
-                self.capability_router.route(
-                    planner_input
-                )
-            )
-        
-            return result
-
-        # -----------------------------------
-        # Knowledge Routing
-        # -----------------------------------
-
-        knowledge_sources = (
-            self.knowledge_router.route(
+            "knowledge_required": self.knowledge_router.requires_knowledge(
                 user_input
-            )
-        )
+            ),
 
-        result[
-            "knowledge_sources"
-        ] = knowledge_sources
+            "compute_required": self.tool_router.route(
+                user_input
+            )["use_tool"]
 
-        
-
-        
-
-        # -----------------------------------
-        # Capability Routing
-        # -----------------------------------
-
-        planner_input = {
-
-            "knowledge_sources":
-                knowledge_sources,
-
-            "tools":
-                result["tools"]
         }
 
-        result[
-            "capabilities"
-        ] = self.capability_router.route(
-            planner_input
+        capabilities = self.capability_router.route(
+            intent
         )
 
-        return result
+        return {
+
+            "capabilities": capabilities
+
+        }

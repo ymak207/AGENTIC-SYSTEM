@@ -1,3 +1,5 @@
+import re
+
 class KnowledgeRouter:
 
     def __init__(self):
@@ -49,42 +51,22 @@ class KnowledgeRouter:
 
         ]
 
-    def route(self, query):
-
+    def requires_knowledge(self, query):
+    
         query = query.lower()
-
-        # -------------------------
-        # Personal
-        # -------------------------
-
+    
         if any(k in query for k in self.memory_keywords):
-
-            sources = ["memory"]
-
-            if any(k in query for k in self.latest_keywords):
-
-                sources.append("web")
-
-            return sources
-
-        # -------------------------
-        # Uploaded Documents
-        # -------------------------
-
+            return True
+    
         if any(k in query for k in self.document_keywords):
-
-            return ["rag"]
-
-        # -------------------------
-        # Latest Information
-        # -------------------------
-
+            return True
+    
         if any(k in query for k in self.latest_keywords):
-
-            return ["web"]
-
-        # -------------------------
-        # Default General Knowledge
-        # -------------------------
-
-        return ["rag", "web"]
+            return True
+    
+        # Pure math expression only
+        if re.fullmatch(r"[\d\s\+\-\*/().]+", query.strip()):
+            return False
+    
+        # Everything else is treated as knowledge
+        return True

@@ -2,28 +2,18 @@ class CapabilityRouter:
 
     def route(
         self,
-        plan
+        intent
     ):
 
         capabilities = []
 
-        knowledge = plan.get(
-            "knowledge_sources",
-            []
-        )
-
-        tools = plan.get(
-            "tools",
-            []
-        )
-
-        if knowledge:
+        if intent.get("knowledge_required"):
 
             capabilities.append(
                 "knowledge"
             )
 
-        if "calculator" in tools:
+        if intent.get("compute_required"):
 
             capabilities.append(
                 "compute"
