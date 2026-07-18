@@ -1,7 +1,7 @@
 from llm.ollama_llm import OllamaLLM
 
-from tools.router import ToolRouter
-from tools.tool_executor import ToolExecutor
+from capabilities.knowledge.knowledge_executor import KnowledgeExecutor
+from capabilities.compute.compute_executor import ComputeExecutor
 
 
 class ExecutorAgent:
@@ -10,9 +10,9 @@ class ExecutorAgent:
 
         self.llm = OllamaLLM()
 
-        self.router = ToolRouter()
+        self.knowledge_executor = KnowledgeExecutor()
 
-        self.tool_executor = ToolExecutor()
+        self.compute_executor = ComputeExecutor()
 
     def execute(self, plan: dict, state, user_goal: str):
 
@@ -24,80 +24,29 @@ class ExecutorAgent:
             "Executor Started"
         )
 
-        # =====================================
-        # STEP 1: ROUTE REQUEST
-        # =====================================
+        for step in plan["steps"]:
 
-        tool_decision = self.router.route(user_goal)
-
-        state.add_trace(
-            f"Tool Routing Complete "
-            f"(use_tool={tool_decision.get('use_tool')})"
-        )
-
-        # =====================================
-        # STEP 2: EXECUTE TOOL
-        # =====================================
-
-        if tool_decision.get("use_tool"):
-
-            tool_name = tool_decision["tool_name"]
-
+            capability = step["capability"]
+        
             state.add_trace(
-                f"Tool Selected: {tool_name}"
+                f"Executing capability: {capability}"
             )
-
-            execution_result = self.tool_executor.execute(
-                tool_name=tool_name,
-                tool_input=tool_decision["tool_input"]
-            )
-
-            # =====================================
-            # TOOL HISTORY
-            # =====================================
-
-            state.tool_calls.append(
-                {
-                    "tool_name": tool_name,
-                    "success": execution_result["success"]
-                }
-            )
-
-            if execution_result["success"]:
-
-                state.add_trace(
-                    f"Tool Success: {tool_name}"
+        
+            if capability == "knowledge":
+        
+                self.knowledge_executor.execute(
+                    step=step,
+                    state=state,
+                    user_goal=user_goal
                 )
-
-                state.final_answer = (
-                    f"Tool Used: "
-                    f"{execution_result['tool_name']}\n"
-                    f"Result: "
-                    f"{execution_result['result']}"
+        
+            elif capability == "compute":
+        
+                self.compute_executor.execute(
+                    step=step,
+                    state=state,
+                    user_goal=user_goal
                 )
-
-                state.add_trace(
-                    "Executor Completed"
-                )
-
-                return
-
-            state.add_trace(
-                f"Tool Failed: {tool_name}"
-            )
-
-            state.final_answer = (
-                f"Tool Used: "
-                f"{execution_result['tool_name']}\n"
-                f"Error: "
-                f"{execution_result['error']}"
-            )
-
-            state.add_trace(
-                "Executor Completed"
-            )
-
-            return
 
         # =====================================
         # STEP 3: RETRY FEEDBACK
