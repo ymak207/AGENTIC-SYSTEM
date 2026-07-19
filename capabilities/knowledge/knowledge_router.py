@@ -1,72 +1,56 @@
-import re
-
 class KnowledgeRouter:
 
-    def __init__(self):
+    def route(
+    self,
+    query
+  ):
 
-        self.memory_keywords = [
-
-            "my name",
-            "my profession",
-            "my job",
-            "my role",
-            "my profile",
-            "my experience",
-            "my skills",
-            "my preference",
-            "my preferences",
-            "who am i",
-            "about me"
-
+        query = query.lower()
+    
+        memory_keywords = [
+    
+            "my ",
+            "me ",
+            "mine",
+            "profession",
+            "experience",
+            "profile",
+            "preference",
+            "who am i"
+    
         ]
-
-        self.document_keywords = [
-
-            "document",
-            "documents",
-            "pdf",
-            "policy",
-            "policies",
-            "manual",
-            "manuals",
-            "uploaded",
-            "upload",
-            "knowledge base",
-            "summarize",
-            "summarise"
-
-        ]
-
-        self.latest_keywords = [
-
+    
+        web_keywords = [
+    
             "latest",
-            "current",
             "today",
-            "recent",
+            "current",
             "news",
             "announcement",
             "announcements",
-            "live",
-            "trending"
-
+            "recent",
+            "live"
+    
         ]
-
-    def requires_knowledge(self, query):
     
-        query = query.lower()
+        # -------------------------
+        # Memory query
+        # -------------------------
     
-        if any(k in query for k in self.memory_keywords):
-            return True
+        if any(k in query for k in memory_keywords):
     
-        if any(k in query for k in self.document_keywords):
-            return True
+            return ["memory"]
     
-        if any(k in query for k in self.latest_keywords):
-            return True
+        # -------------------------
+        # Latest information
+        # -------------------------
     
-        # Pure math expression only
-        if re.fullmatch(r"[\d\s\+\-\*/().]+", query.strip()):
-            return False
+        if any(k in query for k in web_keywords):
     
-        # Everything else is treated as knowledge
-        return True
+            return ["web"]
+    
+        # -------------------------
+        # Everything else
+        # -------------------------
+    
+        return ["rag", "web"]

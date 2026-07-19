@@ -1,37 +1,67 @@
-from agents.executor import ExecutorAgent
-from orchestrator.state import WorkflowState
+from routing.intent_router import IntentRouter
+from agents.planner import PlannerAgent
 
-executor = ExecutorAgent()
 
-state = WorkflowState()
+router = IntentRouter()
 
-plan = {
-    "goal": "Explain Docker and calculate 23*44",
-    "steps": [
-        {
-            "id": 1,
-            "capability": "knowledge",
-            "action": "Retrieve Docker information",
-            "description": "Gather Docker details"
-        },
-        {
-            "id": 2,
-            "capability": "compute",
-            "action": "Perform multiplication",
-            "description": "Calculate 23*44"
-        }
-    ]
-}
+planner = PlannerAgent()
 
-executor.execute(
-    plan=plan,
-    state=state,
-    user_goal="Explain Docker and calculate 23*44"
-)
+tests = [
 
-print("\nTrace\n")
+    "Explain Docker",
 
-for item in state.trace:
-    print(item)
+    "23*44",
 
-print("\nExecutor capability flow test passed.")
+    "Explain Docker and calculate 23*44",
+
+    "What is my profession",
+
+    "Latest AWS announcements"
+
+]
+
+for query in tests:
+
+    print("=" * 80)
+    print(query)
+    print("=" * 80)
+
+    routing = router.route(
+        query
+    )
+
+    print("\nRouting\n")
+    print(routing)
+
+    plan = planner.plan(
+        user_goal=query,
+        routing=routing
+    )
+
+    print("\nPlanner\n")
+    print(plan)
+
+    assert "capabilities" in routing
+
+    assert isinstance(
+        routing["capabilities"],
+        list
+    )
+
+    assert len(
+        routing["capabilities"]
+    ) > 0
+
+    assert "goal" in plan
+
+    assert "steps" in plan
+
+    assert len(
+        plan["steps"]
+    ) > 0
+
+    for step in plan["steps"]:
+
+        assert step["capability"] in routing["capabilities"]
+
+print("\nIntent -> Capability -> Planner test passed.")

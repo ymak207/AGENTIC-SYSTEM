@@ -119,7 +119,15 @@ escape them using \".
 Example
 "description":"Type \"hello\" into the console."
 
-The planner creates ONLY execution steps.
+The planner creates ONLY capability-level execution steps.
+
+Each capability may appear ONLY ONCE in the execution plan.
+
+Do not split a single capability into multiple steps.
+
+The Executor is responsible for performing all work inside a capability.
+
+The Planner only decides WHICH capabilities are needed and in WHAT order.
 
 Do not mention implementation names like:
 
@@ -129,6 +137,27 @@ Do not mention implementation names like:
 - Calculator
 
 Describe the task instead.
+
+Examples
+
+User:
+Explain Docker
+
+Correct
+
+One Knowledge step
+
+Wrong
+
+Knowledge: Retrieve Docker
+
+Knowledge: Summarize Docker
+
+Knowledge: Prepare explanation
+
+Those are internal implementation details of the Knowledge capability.
+
+Likewise, Compute capability should also appear only once.
 
 Good
 
@@ -223,6 +252,8 @@ Output format
 Rules
 
 Each step MUST contain one capability.
+
+A capability must never appear more than once in the execution plan.
 
 Allowed capabilities are provided at runtime.
 
@@ -389,6 +420,19 @@ class PlannerAgent:
             if not isinstance(step["description"], str):
                 raise ValueError("description must be string")
         
+        # -----------------------------
+        # Duplicate capability check
+        # -----------------------------
+        
+        capabilities = [
+            step["capability"]
+            for step in plan["steps"]
+        ]
+        
+        if len(capabilities) != len(set(capabilities)):
+            raise ValueError(
+                "Planner produced duplicate capability steps."
+            )
             
     
 
