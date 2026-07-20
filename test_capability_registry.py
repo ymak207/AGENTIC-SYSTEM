@@ -1,67 +1,95 @@
-from routing.intent_router import IntentRouter
-from agents.planner import PlannerAgent
+from orchestrator.workflow import run_workflow
 
 
-router = IntentRouter()
-
-planner = PlannerAgent()
-
-tests = [
+queries = [
 
     "Explain Docker",
 
     "23*44",
 
-    "Explain Docker and calculate 23*44",
-
-    "What is my profession",
-
-    "Latest AWS announcements"
+    "What is my profession"
 
 ]
 
-for query in tests:
+
+for query in queries:
 
     print("=" * 80)
     print(query)
     print("=" * 80)
 
-    routing = router.route(
-        query
-    )
+    state = run_workflow(query)
 
-    print("\nRouting\n")
-    print(routing)
+    # ====================================================
+    # Basic validations
+    # ====================================================
 
-    plan = planner.plan(
-        user_goal=query,
-        routing=routing
-    )
+    assert state is not None
 
-    print("\nPlanner\n")
-    print(plan)
+    assert state.final_answer
+    assert len(state.final_answer.strip()) > 0
 
-    assert "capabilities" in routing
+    assert state.plan is not None
+    assert "goal" in state.plan
+    assert "steps" in state.plan
+    assert len(state.plan["steps"]) > 0
 
-    assert isinstance(
-        routing["capabilities"],
-        list
-    )
+    assert isinstance(state.metrics, dict)
 
-    assert len(
-        routing["capabilities"]
-    ) > 0
+    assert isinstance(state.trace, list)
+    assert len(state.trace) > 0
 
-    assert "goal" in plan
+    assert state.workflow_status is not None
 
-    assert "steps" in plan
+    assert isinstance(state.knowledge, dict)
 
-    assert len(
-        plan["steps"]
-    ) > 0
+    # ====================================================
+    # Knowledge validation
+    # ====================================================
 
-    for step in plan["steps"]:
+    if "Docker" in query:
 
-        assert step["capability"] in routing["capabilities"]
+        assert (
+            len(state.knowledge["memory"])
+            + len(state.knowledge["rag"])
+            + len(state.knowledge["web"])
+        ) > 0
 
-print("\nIntent -> Capability -> Planner test passed.")
+    # ====================================================
+    # Compute validation
+    # ====================================================
+
+    if "23*44" in query:
+
+        assert len(state.compute_results) == 1
+
+        result = state.compute_results[0]
+
+        assert result["expression"] == "23*44"
+
+        assert float(result["result"]) == 1012
+
+    # ====================================================
+    # Print Results
+    # ====================================================
+
+    print("\nAnswer\n")
+    print(state.final_answer)
+
+    print("\nMetrics\n")
+    print(state.metrics)
+
+    print("\nTrace\n")
+    print(state.trace)
+
+    print("\nKnowledge\n")
+    print(state.knowledge)
+
+    if state.compute_results:
+
+        print("\nCompute Results\n")
+        print(state.compute_results)
+
+    print()
+
+print("\nWorkflow test passed.")

@@ -9,10 +9,16 @@ class ExecutorAgent:
     def __init__(self):
 
         self.llm = OllamaLLM()
-
-        self.knowledge_executor = KnowledgeExecutor()
-
-        self.compute_executor = ComputeExecutor()
+    
+        self.executors = {
+    
+            "knowledge": KnowledgeExecutor(),
+    
+            "compute": ComputeExecutor()
+    
+        }
+    
+        self.knowledge_executor = self.executors["knowledge"]
 
     def execute(self, plan: dict, state, user_goal: str):
 
@@ -21,7 +27,7 @@ class ExecutorAgent:
         # =====================================
 
         state.add_trace(
-            "Executor Started"
+                "Executor Started"
         )
 
         for step in plan["steps"]:
@@ -32,22 +38,26 @@ class ExecutorAgent:
                 f"Executing capability: {capability}"
             )
         
-            if capability == "knowledge":
+            executor = self.executors.get(
+                capability
+            )
         
-                self.knowledge_executor.execute(
-                    step=step,
-                    state=state,
-                    user_goal=user_goal
+            if executor is None:
+        
+                raise Exception(
+                    f"Unknown capability {capability}"
                 )
         
-            elif capability == "compute":
+            executor.execute(
         
-                self.compute_executor.execute(
-                    step=step,
-                    state=state,
-                    user_goal=user_goal
-                )
-
+                step=step,
+        
+                state=state,
+        
+                user_goal=user_goal
+        
+            )
+        
         # =====================================
         # STEP 3: RETRY FEEDBACK
         # =====================================
@@ -133,6 +143,26 @@ Reviewer feedback:
 
         rag_text = ""
 
+        web_text = ""
+        
+        compute_text = ""
+
+        if hasattr(state, "compute_results"):
+        
+            if state.compute_results:
+        
+                compute_text = "\nComputed Results:\n"
+        
+                for item in state.compute_results:
+        
+                    compute_text += (
+        
+                        f"{item['expression']} = {item['result']}\n"
+        
+                    )
+        
+                compute_text += "\n"
+
         if state.knowledge["rag"]:
 
             rag_text = "\nRetrieved Knowledge:\n\n"
@@ -151,17 +181,54 @@ Reviewer feedback:
 
                 )
         
+        if state.knowledge["web"]:
+
+            web_text = "\nRetrieved Web Results:\n\n"
+        
+            for item in state.knowledge["web"]:
+        
+                web_text += (
+        
+                    f"Title: {item['title']}\n"
+        
+                    f"{item['content']}\n"
+        
+                    "----------------------------------------\n"
+        
+                )
+        
+        
         prompt = f"""
                 {improvement_note}
                 
                 You are an execution agent.
                 
-                Use the retrieved knowledge ONLY when it is relevant
-                to answering the user's request.
+                Use the available information when appropriate.
+
+                Priority order:
+                
+                1. User Memory
+                2. Retrieved RAG Knowledge
+                3. Retrieved Web Results
+                4. Computed Results
+                
+                If multiple sources contain the answer,
+                prefer the higher priority source.
+                
+                Never invent facts.
+                
+                If Computed Results are present,
+                use those values exactly.
+                
+                Do NOT recompute mathematical expressions yourself.
                 
                 {memory_text}
-                
+
                 {rag_text}
+                
+                {web_text}
+                
+                {compute_text}
                 
                 User goal:
                 {user_goal}
@@ -192,6 +259,24 @@ Reviewer feedback:
                 f"RAG Injected ({len(state.knowledge['rag'])})"
         
             )
+
+        if state.knowledge["web"]:
+
+            state.add_trace(
+        
+                f"Web Injected ({len(state.knowledge['web'])})"
+        
+            )
+
+        if hasattr(state, "compute_results"):
+
+            if state.compute_results:
+        
+                state.add_trace(
+        
+                    f"Compute Injected ({len(state.compute_results)})"
+        
+                )
 
         state.add_trace(
             "LLM Execution Started"

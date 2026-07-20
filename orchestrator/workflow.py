@@ -8,7 +8,8 @@ from routing.intent_router import IntentRouter
 from orchestrator.state import WorkflowState
 from orchestrator.workflow_status import WorkflowStatus
 
-from knowledge.knowledge_manager import KnowledgeManager
+
+
 
 
 def run_workflow(user_input: str) -> WorkflowState:
@@ -19,7 +20,6 @@ def run_workflow(user_input: str) -> WorkflowState:
     intent_router = IntentRouter()
     executor = ExecutorAgent()
     reviewer = ReviewerAgent()
-    knowledge = KnowledgeManager()
 
     state = WorkflowState()
 
@@ -70,25 +70,7 @@ def run_workflow(user_input: str) -> WorkflowState:
 
     state.workflow_status = status.to_list()
 
-    # ==========================================
-    # KNOWLEDGE RETRIEVAL
-    # ==========================================
-
-    status.start("memory")
-    status.start("knowledge")
-
-    state.workflow_status = status.to_list()
-
-    knowledge.retrieve(
-        user_input,
-        plan,
-        state
-    )
-
-    status.complete("memory")
-    status.complete("knowledge")
-
-    state.workflow_status = status.to_list()
+    
 
     # ==========================================
     # EXECUTION LOOP
@@ -187,9 +169,9 @@ def run_workflow(user_input: str) -> WorkflowState:
 
         if review["approved"]:
 
-            saved_count = knowledge.save_memory(
-                user_input
-            )
+            saved_count = executor.knowledge_executor.manager.save_memory(
+    user_input
+)
 
             state.metrics[
                 "memories_saved"

@@ -37,6 +37,8 @@ class WorkflowState:
             
             }
         
+        self.compute_results = []
+        
         self.workflow_status = []
 
         # Timing and metrics
