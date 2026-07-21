@@ -185,7 +185,6 @@ def run_workflow(user_input: str) -> WorkflowState:
                 "Workflow Approved"
             )
 
-            status.finish()
 
             state.workflow_status = status.to_list()
 

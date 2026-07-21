@@ -24,15 +24,9 @@ class WorkflowStatus:
 
             "planner": WorkflowStep("Planner"),
 
-            "memory": WorkflowStep("Memory Retrieval"),
-
-            "knowledge": WorkflowStep("Knowledge Retrieval"),
-
             "executor": WorkflowStep("Executor"),
 
-            "reviewer": WorkflowStep("Reviewer"),
-
-            "finished": WorkflowStep("Finished")
+            "reviewer": WorkflowStep("Reviewer")
 
         }
 
@@ -70,11 +64,7 @@ class WorkflowStatus:
 
     # ----------------------------------
 
-    def finish(self):
-
-        self.steps["finished"].status = "Completed"
-
-    # ----------------------------------
+   
 
     def to_list(self):
 
