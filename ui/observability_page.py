@@ -45,11 +45,11 @@ def render_observability(state):
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
-            "📋 Plan",
+            "📋 Planner",
             "📚 Knowledge",
+            "🧮 Compute",
             "🔍 Trace",
-            "🛠 Tool Calls",
-            "📊 Metrics"
+            "📊 Metrics",
         ]
     )
 
@@ -59,14 +59,16 @@ def render_observability(state):
 
     with tab1:
 
-        st.subheader(
-            "Generated Plan"
-        )
-
-        st.json(
-            state.plan
-        )
-
+        st.subheader("Planner Output")
+    
+        st.json(state.plan)
+    
+        if state.metrics.get("planner_repairs", 0):
+    
+            st.warning(
+                f'Planner Repairs : {state.metrics["planner_repairs"]}'
+            )
+    
     # =====================================================
     # KNOWLEDGE
     # =====================================================
@@ -150,42 +152,60 @@ def render_observability(state):
             st.info(
                 "No RAG context retrieved."
             )
+        
+        st.divider()
+
+        st.markdown("### 🌐 Web")
+        
+        if state.knowledge["web"]:
+        
+            for page in state.knowledge["web"]:
+        
+                with st.expander(page["title"]):
+        
+                    st.write(page["url"])
+        
+                    st.write(page["content"])
+        
+        else:
+        
+            st.info("No web results.")
 
     # =====================================================
     # TRACE
     # =====================================================
 
-    with tab3:
+    with tab4:
 
         st.subheader(
             "Execution Timeline"
         )
 
-        st.table(
-            state.trace
-        )
-
-    # =====================================================
-    # TOOL CALLS
-    # =====================================================
-
-    with tab4:
-
-        st.subheader(
-            "Tool Calls"
-        )
-
-        if state.tool_calls:
-
-            st.json(
-                state.tool_calls
+        st.dataframe(
+                state.trace,
+                use_container_width=True,
+                hide_index=True,
             )
 
+    # =====================================================
+    # COMPUTE
+    # =====================================================
+    
+    with tab3:
+    
+        st.subheader("Compute Results")
+    
+        if state.compute_results:
+    
+            st.dataframe(
+                state.compute_results,
+                use_container_width=True,
+                hide_index=True,
+            )
+    
         else:
-
-            st.info(
-                "No tool calls."
-            )
+    
+            st.info("No compute execution.")
 
     # =====================================================
     # METRICS
@@ -193,10 +213,42 @@ def render_observability(state):
 
     with tab5:
 
-        st.subheader(
-            "Workflow Metrics"
+        m = state.metrics
+    
+        c1, c2, c3 = st.columns(3)
+    
+        c1.metric(
+            "Planner",
+            f"{m.get('planner_seconds', 0):.2f}s",
         )
-
-        st.json(
-            state.metrics
+    
+        c2.metric(
+            "Executor",
+            f"{m.get('executor_seconds', 0):.2f}s",
         )
+    
+        c3.metric(
+            "Reviewer",
+            f"{m.get('reviewer_seconds', 0):.2f}s",
+        )
+    
+        c1, c2, c3 = st.columns(3)
+    
+        c1.metric(
+            "Workflow",
+            f"{m.get('workflow_seconds', 0):.2f}s",
+        )
+    
+        c2.metric(
+            "LLM Calls",
+            m.get("llm_calls", 0),
+        )
+    
+        c3.metric(
+            "Planner Repairs",
+            m.get("planner_repairs", 0),
+        )
+    
+        st.divider()
+    
+        st.json(m)
