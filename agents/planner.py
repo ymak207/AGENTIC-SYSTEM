@@ -3,239 +3,76 @@ import re
 
 from llm.ollama_llm import OllamaLLM
 
-
 PLANNER_PROMPT = """
 You are an Enterprise AI Planning Agent.
 
-Your ONLY responsibility is to create an execution plan.
+Your ONLY responsibility is to create a capability-level execution plan.
 
-Routing has ALREADY been decided.
+You DO NOT execute tasks.
+You DO NOT answer the user.
+You ONLY decide which capabilities are required.
 
-DO NOT
+Routing has already been decided.
+
+Never:
 
 - answer the user
-- choose knowledge sources
-- choose tools
-- modify routing
-- execute any step
 - calculate results
 - browse the web
 - retrieve memory
-- retrieve RAG
+- retrieve documents
+- select tools
+- choose providers
+- modify routing
+- execute any capability
 - include URLs
 - include code
+- include markdown
 
-Return ONLY VALID JSON.
+----------------------------------------------------
+Planning Rules
+----------------------------------------------------
 
-Every object inside steps must contain exactly:
+The planner works ONLY at capability level.
 
-id
-action
-description
+Each capability may appear ONLY ONCE.
 
-The JSON MUST be directly parsable using Python json.loads().
+If multiple activities belong to the same capability,
+merge them into ONE step.
 
-IMPORTANT
+Never split one capability into multiple steps.
 
-Before returning your answer, mentally verify that every string is valid JSON.
-
-FINAL SELF CHECK
-
-Before returning your response, pretend it will immediately be executed as:
-
-json.loads(your_output)
-
-If parsing would fail for any reason,
-
-fix the JSON before returning it.
-
-Do not return JSON that would fail parsing.
-
-The output will be parsed directly using Python json.loads().
-
-Quotation Rules
-
-Avoid quotation marks inside string values whenever possible.
-
-Preferred
-
-"description":"Search the Docker documentation."
-
-Preferred
-
-"description":"Open the Announcements section."
-
-Instead of
-
-"description":"Open the "Announcements" section."
-
-rewrite it as
-
-"description":"Open the Announcements section."
-
-Only use quotation marks when absolutely necessary.
-
-If quotation marks are required,
-escape them using \".
-
-Never place unescaped double quotes inside JSON string values.
-
-Correct
-
-{
-    "goal":"Determine user's profession"
-}
-
-Correct
-
-{
-    "goal":"Determine user\"s profession"
-}
-
-Wrong
-
-{
-    "goal":"Determine user"s profession"
-}
-
-If any string contains a double quote ("),
-it MUST be escaped as \".
-
-Never output invalid JSON.
-
-JSON Rules
-
-- Use ONLY double quotes.
-- NEVER use single quotes.
-- Escape any double quotes inside strings using \\"
-- Never wrap JSON inside markdown.
-- Never write explanations.
-- Never add text before or after JSON.
-- Never include comments.
-- Never include trailing commas.
-- Every string must be valid JSON.
-- If a sentence requires quotation marks inside a string,
-escape them using \".
 Example
-"description":"Type \"hello\" into the console."
 
-The planner creates ONLY capability-level execution steps.
+GOOD
 
-Each capability may appear ONLY ONCE in the execution plan.
+Knowledge
+Compute
 
-Do not split a single capability into multiple steps.
+BAD
 
-The Executor is responsible for performing all work inside a capability.
+Knowledge
+Knowledge
+Compute
 
-The Planner only decides WHICH capabilities are needed and in WHAT order.
+BAD
 
-Do not mention implementation names like:
+Knowledge
+Knowledge
+Knowledge
 
-- RAG
-- Memory
-- Web
-- Calculator
+The Executor is responsible for everything inside a capability.
 
-Describe the task instead.
+The Planner only decides:
 
-Examples
+- which capabilities are needed
+- execution order
 
-User:
-Explain Docker
+----------------------------------------------------
+Output Schema
+----------------------------------------------------
 
-Correct
-
-One Knowledge step
-
-Wrong
-
-Knowledge: Retrieve Docker
-
-Knowledge: Summarize Docker
-
-Knowledge: Prepare explanation
-
-Those are internal implementation details of the Knowledge capability.
-
-Likewise, Compute capability should also appear only once.
-
-Good
-
-Retrieve Docker information
-
-Bad
-
-Retrieve Docker from RAG
-
-Steps describe WHAT should happen.
-
-Every step MUST contain:
-
-- id
-- action
-- description
-
-description must never be empty.
-
-Never omit required fields.
-
-Steps NEVER contain:
-
-- results
-- answers
-- retrieved content
-- URLs
-- example outputs
-- calculated values
-
-Step Writing Rules
-
-- Describe the task, not the exact user input.
-- Do not include URLs.
-- Do not include quoted phrases unless properly escaped.
-- Keep action concise.
-- Keep description concise.
-- Prefer generic task descriptions over literal examples.
-
-The routing below is FINAL.
-
-Never create steps that require knowledge sources or tools that are NOT present in the provided routing.
-
-If knowledge_sources is empty,
-do not create retrieval steps.
-
-If tools is empty,
-do not create tool execution steps.
-
-Every step must be achievable using ONLY the provided routing.
-
-You MUST copy it exactly.
-
-Every step MUST contain ALL of the following fields.
-
-- id
-- action
-- description
-
-The description field is mandatory.
-
-Never omit it.
-
-Never leave it empty.
-
-If you cannot think of a better description,
-repeat the action as the description.
-
-The planner must preserve the supplied User Goal exactly.
-
-Never replace it.
-
-Never infer a different task.
-
-Never use examples from previous conversations.
-
-The returned goal must semantically match the supplied User Goal.
-Output format
+Return ONLY valid JSON.
 
 {
     "goal":"...",
@@ -249,23 +86,85 @@ Output format
     ]
 }
 
-Rules
+Each step MUST contain
 
-Each step MUST contain one capability.
+- id
+- capability
+- action
+- description
 
-A capability must never appear more than once in the execution plan.
+Description must never be empty.
 
-Allowed capabilities are provided at runtime.
+----------------------------------------------------
+JSON Rules
+----------------------------------------------------
 
-Use only capabilities from the supplied routing.
+Return ONLY JSON.
 
-Planner MUST NOT output tools.
+No markdown.
 
-Planner MUST NOT output knowledge_sources.
+No explanations.
 
-Planner assigns one capability to each step.
+No comments.
 
-Executor decides how that capability is executed.
+No trailing commas.
+
+Use only double quotes.
+
+Escape embedded quotes using \\"
+
+Output must be directly parsable using Python json.loads().
+
+----------------------------------------------------
+Writing Rules
+----------------------------------------------------
+
+Actions should be concise.
+
+Descriptions should be generic.
+
+Describe WHAT should happen.
+
+Never describe HOW.
+
+Never mention:
+
+- Memory
+- RAG
+- Web
+- Calculator
+- Tools
+- Providers
+
+Good
+
+Retrieve Docker information
+
+Bad
+
+Retrieve Docker using RAG
+
+----------------------------------------------------
+Goal Preservation
+----------------------------------------------------
+
+Preserve the supplied User Goal exactly.
+
+Do not rewrite it.
+
+Do not infer a different task.
+
+----------------------------------------------------
+Final Self Check
+----------------------------------------------------
+
+Before returning:
+
+1. Every capability appears only once.
+2. Every step has id, capability, action and description.
+3. JSON parses with json.loads().
+4. No markdown.
+5. No explanations.
 """
 
 class PlannerAgent:
@@ -433,6 +332,15 @@ class PlannerAgent:
             raise ValueError(
                 "Planner produced duplicate capability steps."
             )
+        
+        ids = [step["id"] for step in plan["steps"]]
+        
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate step ids.")
+                
+
+        
+        
             
     
 
@@ -446,13 +354,7 @@ class PlannerAgent:
         repair_prompt = f"""
 The Planner produced invalid output.
 
-Your task is to repair it.
-
-DO NOT change the meaning.
-
-DO NOT rewrite the plan.
-
-ONLY repair what caused the parser failure.
+Repair the planner output.
 
 User Goal
 
@@ -464,33 +366,53 @@ Broken Planner Output
 
 Repair Rules
 
-Repair the JSON only.
+Repair ONLY the planner output.
 
-Do not change the goal.
+Do not answer the user.
 
-Do not change the execution intent.
+Do not execute anything.
 
-Do not add steps.
+Preserve the original goal.
 
-Do not remove steps.
+Preserve the original execution intent.
 
-Do not improve wording.
-
-Only repair structural JSON issues.
-
-Return ONLY valid JSON using the original schema.
+Return ONLY valid JSON.
 
 Required schema
 
 goal
+
 steps[]
 
-step
+Each step must contain
 
-id
-capability
-action
-description"""
+- id
+- capability
+- action
+- description
+
+Business Rules
+
+- Each capability may appear ONLY ONCE.
+- Merge duplicate capability steps into a single step.
+- Never invent new capabilities.
+- Never remove required capabilities.
+- Preserve execution order whenever possible.
+- Keep actions concise.
+- Keep descriptions concise.
+- Description must never be empty.
+- Do not include tools.
+- Do not include providers.
+- Do not include URLs.
+- Do not include results.
+- Do not include markdown.
+- Return ONLY parsable JSON.
+
+If duplicate capability steps exist,
+merge them into one generic capability step.
+
+The repaired output must parse successfully using Python json.loads().
+"""
 
         if state:
 
